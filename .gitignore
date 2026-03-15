@@ -1,0 +1,12 @@
+.env
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.png
+*.wav
+*.mp3
+bhai_agent
+node_modules/
+dist/
+build/

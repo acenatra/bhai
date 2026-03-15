@@ -1,31 +1,40 @@
 import base64
+import json
 import config
 from groq import Groq
 from openai import OpenAI
 
-SYSTEM_PROMPT = """You are an AI coding orchestrator designed to be the interface between a programmer and their coding agent.
-You are given two inputs:
-1. An image of the user's screen. A bright RED CIRCLE has been drawn on the screen indicating EXACTLY where their mouse cursor is pointing.
-2. A voice recording of the user stating a command or asking a question about the code they are pointing at.
+SYSTEM_PROMPT = """You are 'Bhai', a helpful and intelligent AI companion.
+You can see the user's screen and hear their voice commands in various languages (English, Hindi, Urdu, etc.).
 
-YOUR INSTRUCTIONS:
-Understand the user's voice command and analyze the code around the RED CIRCLE.
-Produce a refined, standalone TEXT PROMPT that will be automatically inserted into the user's coding agent chat box (e.g., Cursor, Antigravity).
+YOUR CORE RULES:
+1. RESPOND IN THE SAME LANGUAGE: If the user speaks in Hindi, you must respond in Hindi. If Urdu, respond in Urdu.
+2. BE CONVERSATIONAL: Focus on speaking the response back to the user clearly.
+3. ACTIONS ONLY WHEN EXPLICITLY ASKED: Do not trigger browser or IDE actions unless the user clearly says something like "Bhai, search for X" or "Bhai, perform this action".
+4. OUTPUT FORMAT: You must return a valid JSON object ONLY.
 
-The output text you generate must be the RAW PROMPT. Do NOT include phrases like "Here is the prompt for your coding agent:". 
-Just output the prompt text directly. Your output should clearly mention the function Name, class name, or specific files to help the coding agent know exactly what to edit.
-For example, if the user points at 'def calculate_tax()' and says "Make this more readable", your output should literally be something like: "Please make the `calculate_tax` function more readable and well-documented."
+JSON SCHEMA:
+{
+  "voice_response": "The spoken response in the SAME LANGUAGE as the user's query.",
+  "action": "web_browse | play_youtube | ide_automate | speak_only | execute_custom",
+  "parameters": {
+    "url": "optional (for web_browse)",
+    "query": "optional (search query for web_browse or song name for play_youtube)",
+    "prompt": "refined coding prompt if action is ide_automate",
+    "command": "custom command if needed"
+  }
+}
+
+If the user asks a general question like "This function what it does?", set action to "speak_only" and provide a clear explanation in their language.
 """
 
 def init_groq():
     if not config.GROQ_API_KEY or config.GROQ_API_KEY == "your_free_groq_api_key_here":
-        print("⚠️ Warning: GROQ_API_KEY is missing or invalid in .env file.")
         return None
     return Groq(api_key=config.GROQ_API_KEY)
 
 def init_github_models():
     if not config.GITHUB_TOKEN or config.GITHUB_TOKEN == "your_free_github_personal_access_token_here":
-        print("⚠️ Warning: GITHUB_TOKEN is missing or invalid in .env file.")
         return None
     return OpenAI(
         base_url="https://models.inference.ai.azure.com",
@@ -35,57 +44,44 @@ def init_github_models():
 groq_client = init_groq()
 github_client = init_github_models()
 
-def generate_orchestrator_prompt(image_bytes, audio_bytes):
+def generate_orchestrator_action(image_bytes, audio_bytes):
     if not groq_client or not github_client:
-        return "ERROR: AI clients not fully initialized. Please set GROQ_API_KEY and GITHUB_TOKEN in the .env file."
+        return {
+            "action": "speak_only",
+            "voice_response": "AI clients not initialized. Check .env."
+        }
         
-    print("🧠 Processing with Groq & GitHub Models...")
     try:
-        # 1. Transcribe audio using Whisper on Groq
-        print("   -> Transcribing audio with Groq...")
+        # 1. Transcribe audio (Whisper handles multi-lingual transcription very well)
         transcription = groq_client.audio.transcriptions.create(
             file=("audio.wav", audio_bytes),
             model="whisper-large-v3-turbo",
             response_format="text",
         )
         user_spoken_text = transcription.strip()
-        print(f"   -> Heard: '{user_spoken_text}'")
+        print(f"   -> Bhai heard: '{user_spoken_text}'")
         
-        # 2. Convert image to base64
+        # 2. Vision analysis & Decision
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
         image_url = f"data:image/png;base64,{base64_image}"
         
-        # 3. Call Vision Model (gpt-4o) using GitHub Models
-        print("   -> Analyzing image and generating prompt with GitHub Models...")
-        messages = [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Listen to the audio command: '{user_spoken_text}'. Now look at the image where the cursor is pointing. Give me the final prompt to feed the coding agent."
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": image_url
-                        }
-                    }
-                ]
-            }
-        ]
-        
         response = github_client.chat.completions.create(
             model="gpt-4o",
-            messages=messages,
-            temperature=0.2,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": [
+                    {"type": "text", "text": f"User's spoken query: '{user_spoken_text}'. (Respond in the same language as the query)"},
+                    {"type": "image_url", "image_url": {"url": image_url}}
+                ]}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.3,
         )
         
-        return response.choices[0].message.content.strip()
+        return json.loads(response.choices[0].message.content)
     except Exception as e:
-        print(f"❌ Error communicating with AI: {e}")
-        return f"ERROR: {e}"
+        print(f"❌ Brain Error: {e}")
+        return {
+            "action": "speak_only",
+            "voice_response": f"Error: {str(e)}"
+        }

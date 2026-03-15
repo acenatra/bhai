@@ -55,3 +55,12 @@ def execute_prompt_in_ide(prompt_text, cursor_pos=None):
     print("DEBUG: Pressing 'enter' to submit...")
     pyautogui.press('enter')
     print("✅ Successfully submitted to AI Agent!")
+
+def execute_custom_command(command_name, cursor_pos=None):
+    print(f"🚀 Executing custom action: {command_name}")
+    if command_name == "write_code":
+        # Simulate 'cmd+l' to focus Cursor/IDE chat
+        execute_prompt_in_ide("", cursor_pos)
+        print("✅ Focus triggered for Cursor.")
+    else:
+        print(f"⚠️ Unknown command: {command_name}")
